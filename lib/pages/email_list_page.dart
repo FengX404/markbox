@@ -17,6 +17,7 @@ import '../shared/themes/app_spacing.dart';
 ///
 /// 展示邮件列表，支持下拉刷新、上拉加载更多
 /// 集成 EmailListProvider 进行状态管理
+/// 集成 WidgetsBindingObserver 监听应用生命周期，实现前台自动刷新
 class EmailListPage extends ConsumerStatefulWidget {
   const EmailListPage({super.key});
 
@@ -25,7 +26,8 @@ class EmailListPage extends ConsumerStatefulWidget {
 }
 
 /// EmailListPage 的状态类
-class _EmailListPageState extends ConsumerState<EmailListPage> {
+class _EmailListPageState extends ConsumerState<EmailListPage>
+    with WidgetsBindingObserver {
   /// 滚动控制器，用于监听滚动位置实现上拉加载更多
   late final ScrollController _scrollController;
 
@@ -36,6 +38,9 @@ class _EmailListPageState extends ConsumerState<EmailListPage> {
     _scrollController = ScrollController();
     // 添加滚动监听
     _scrollController.addListener(_onScroll);
+
+    // 注册应用生命周期监听
+    WidgetsBinding.instance.addObserver(this);
 
     // 在下一帧加载邮件
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -59,8 +64,34 @@ class _EmailListPageState extends ConsumerState<EmailListPage> {
     }
   }
 
+  /// 从子页面返回时静默刷新邮件列表
+  void _onReturnFromSubPage() {
+    if (!mounted) return;
+    final emailListState = ref.read(emailListProvider);
+    if (emailListState.isInitialized &&
+        !emailListState.isRefreshing &&
+        !emailListState.isLoading) {
+      ref.read(emailListProvider.notifier).silentRefresh();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 应用回到前台时，静默刷新邮件列表
+    if (state == AppLifecycleState.resumed) {
+      final emailListState = ref.read(emailListProvider);
+      if (emailListState.isInitialized &&
+          !emailListState.isRefreshing &&
+          !emailListState.isLoading) {
+        ref.read(emailListProvider.notifier).silentRefresh();
+      }
+    }
+  }
+
   @override
   void dispose() {
+    // 移除应用生命周期监听
+    WidgetsBinding.instance.removeObserver(this);
     // 移除滚动监听
     _scrollController.removeListener(_onScroll);
     // 释放滚动控制器
@@ -95,9 +126,13 @@ class _EmailListPageState extends ConsumerState<EmailListPage> {
 
   /// 处理列表项点击
   ///
-  /// 导航到邮件详情页
-  void _onEmailTap(String emailId) {
-    PageTransitions.slideFade(context, EmailDetailPage(emailId: emailId));
+  /// 导航到邮件详情页，返回时静默刷新列表
+  Future<void> _onEmailTap(String emailId) async {
+    await PageTransitions.slideFade(
+      context,
+      EmailDetailPage(emailId: emailId),
+    );
+    _onReturnFromSubPage();
   }
 
   /// 处理重试
@@ -165,17 +200,22 @@ class _EmailListPageState extends ConsumerState<EmailListPage> {
   }
 
   /// 处理菜单选择
-  void _onMenuSelected(String value) {
+  Future<void> _onMenuSelected(String value) async {
+    Widget? page;
     switch (value) {
       case 'accounts':
-        PageTransitions.slideFade(context, const AccountListPage());
+        page = const AccountListPage();
         break;
       case 'add_account':
-        PageTransitions.slideFade(context, const ProviderSelectionPage());
+        page = const ProviderSelectionPage();
         break;
       case 'api_key':
-        PageTransitions.slideFade(context, const ApiKeyConfigPage());
+        page = const ApiKeyConfigPage();
         break;
+    }
+    if (page != null) {
+      await PageTransitions.slideFade(context, page);
+      _onReturnFromSubPage();
     }
   }
 

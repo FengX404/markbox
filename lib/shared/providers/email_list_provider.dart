@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../models/email_list_state.dart';
 import '../models/email.dart';
+import '../models/imap_config.dart';
 import '../models/summary_status.dart';
 import '../../services/email_service.dart';
 import '../../services/zhipu_service.dart';
@@ -46,12 +49,24 @@ class EmailList extends _$EmailList {
   /// 每页邮件数量
   static const int pageSize = 50;
 
+  /// 自动刷新定时器
+  Timer? _autoRefreshTimer;
+
+  /// 自动刷新间隔（秒）
+  static const int autoRefreshIntervalSeconds = 30;
+
   @override
   EmailListState build() {
     // 初始化服务实例
     _emailService = ref.watch(emailServiceProvider);
     _zhipuService = ref.watch(zhipuServiceProvider);
     _storageService = SecureStorageService();
+
+    // 注册资源清理回调
+    ref.onDispose(() {
+      _stopAutoRefresh();
+      _emailService.disconnect();
+    });
 
     // 在 build 返回后异步加载缓存
     Future.microtask(() => _loadCachedEmails());
@@ -73,6 +88,24 @@ class EmailList extends _$EmailList {
       // 加载缓存失败时忽略，继续正常加载
       debugPrint('加载缓存失败: $e');
     }
+  }
+
+  /// 启动自动刷新定时器
+  ///
+  /// 每隔 [autoRefreshIntervalSeconds] 秒执行一次静默刷新
+  void _startAutoRefresh() {
+    _stopAutoRefresh();
+    _autoRefreshTimer = Timer.periodic(
+      const Duration(seconds: autoRefreshIntervalSeconds),
+      (_) => silentRefresh(),
+    );
+    debugPrint('自动刷新已启动，间隔 ${autoRefreshIntervalSeconds}s');
+  }
+
+  /// 停止自动刷新定时器
+  void _stopAutoRefresh() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = null;
   }
 
   /// 保存邮件列表到本地存储
@@ -115,13 +148,16 @@ class EmailList extends _$EmailList {
         isLoading: false,
         isInitialized: true,
         currentPage: 1,
-        hasMore: false,
+        hasMore: sortedEmails.length >= pageSize,
         totalCount: sortedEmails.length,
         error: null,
       );
 
       // 保存到本地存储
       await _saveEmailsToCache(sortedEmails);
+
+      // 启动自动刷新
+      _startAutoRefresh();
 
       // 异步生成摘要
       _generateSummaries(sortedEmails);
@@ -139,7 +175,7 @@ class EmailList extends _$EmailList {
   /// [configs] IMAP 配置列表
   /// 返回所有账户的邮件列表
   /// 注意：由于 EmailService 使用单例连接，必须顺序获取每个账户的邮件
-  Future<List<Email>> _fetchEmailsFromAllAccounts(List<dynamic> configs) async {
+  Future<List<Email>> _fetchEmailsFromAllAccounts(List<ImapConfig> configs, {int page = 1}) async {
     final allEmails = <Email>[];
 
     // 顺序获取每个账户的邮件（避免连接冲突）
@@ -147,11 +183,11 @@ class EmailList extends _$EmailList {
       try {
         final result = await _emailService.fetchEmails(
           config: config,
-          page: 1,
+          page: page,
           pageSize: pageSize,
         );
         allEmails.addAll(result.emails);
-        debugPrint('成功获取 ${result.emails.length} 封邮件 (${config.email})');
+        debugPrint('成功获取 ${result.emails.length} 封邮件 (${config.email}, 第$page页)');
       } catch (e) {
         debugPrint('获取邮件失败 (${config.email}): $e');
         // 继续获取下一个账户的邮件
@@ -331,6 +367,9 @@ class EmailList extends _$EmailList {
       // 保存到本地存储
       await _saveEmailsToCache(mergedEmails);
 
+      // 启动自动刷新（确保刷新后定时器继续运行）
+      _startAutoRefresh();
+
       // 异步生成摘要（只对未生成的邮件）
       _generateSummaries(mergedEmails);
     } on EmailServiceException catch (e) {
@@ -344,11 +383,51 @@ class EmailList extends _$EmailList {
 
   /// 加载更多邮件（分页加载）
   ///
-  /// 多账户模式下暂不支持分页加载更多
+  /// 从所有已配置账户获取下一页邮件，合并到现有列表
   Future<void> loadMoreEmails() async {
-    // 多账户模式下暂不支持分页
-    if (!state.hasMore) {
+    if (!state.hasMore || state.isLoadingMore) return;
+
+    state = state.copyWith(isLoadingMore: true);
+    final nextPage = state.currentPage + 1;
+
+    // 获取当前账户配置列表
+    final accountConfig = ref.read(accountConfigProvider);
+    final configs = accountConfig.configs;
+
+    if (configs.isEmpty) {
+      state = state.copyWith(isLoadingMore: false, hasMore: false);
       return;
+    }
+
+    try {
+      // 从所有账户获取下一页邮件
+      final allNewEmails = await _fetchEmailsFromAllAccounts(
+        configs,
+        page: nextPage,
+      );
+
+      if (allNewEmails.isEmpty) {
+        state = state.copyWith(isLoadingMore: false, hasMore: false);
+        return;
+      }
+
+      // 合并新邮件到现有列表（去重、排序）
+      final mergedEmails = _mergeEmails(
+        newEmails: allNewEmails,
+        existingEmails: state.emails,
+      );
+
+      state = state.copyWith(
+        emails: mergedEmails,
+        currentPage: nextPage,
+        isLoadingMore: false,
+        totalCount: mergedEmails.length,
+      );
+
+      // 保存到本地存储
+      await _saveEmailsToCache(mergedEmails);
+    } catch (e) {
+      state = state.copyWith(isLoadingMore: false, error: '加载更多邮件失败: $e');
     }
   }
 
@@ -407,17 +486,22 @@ class EmailList extends _$EmailList {
       return;
     }
 
-    // 先将所有待处理的邮件状态设置为 generating
+    // 每次最多处理 5 封邮件，只将这 5 封设置为 generating 状态
+    // 避免将所有待处理邮件都卡在 generating 状态
+    final emailsToProcess = emailsNeedSummary.take(5).toList();
+    final emailsToProcessIds = emailsToProcess.map((e) => e.id).toSet();
+
+    // 只将实际要处理的邮件状态设置为 generating
     final generatingEmails = state.emails.map((e) {
-      if (emailsNeedSummary.any((need) => need.id == e.id)) {
+      if (emailsToProcessIds.contains(e.id)) {
         return e.copyWith(summaryStatus: SummaryStatus.generating);
       }
       return e;
     }).toList();
     state = state.copyWith(emails: generatingEmails);
 
-    // 并发生成摘要（每次最多处理 5 封邮件）
-    final emailsToProcess = emailsNeedSummary.take(5).toList();
+    // 保存快照，避免并发修改导致状态不一致
+    final snapshotEmails = List<Email>.from(generatingEmails);
 
     // 创建并发任务
     final futures = emailsToProcess.map((email) async {
@@ -439,8 +523,8 @@ class EmailList extends _$EmailList {
     // 等待所有任务完成
     final results = await Future.wait(futures);
 
-    // 更新所有邮件的状态
-    var updatedEmails = List<Email>.from(state.emails);
+    // 基于快照更新邮件状态，避免与并发操作冲突
+    var updatedEmails = snapshotEmails;
     for (final result in results) {
       final index = updatedEmails.indexWhere((e) => e.id == result.emailId);
       if (index != -1) {
@@ -533,8 +617,9 @@ class EmailList extends _$EmailList {
 
   /// 重置状态
   ///
-  /// 将状态重置为初始状态
+  /// 将状态重置为初始状态，并停止自动刷新
   void reset() {
+    _stopAutoRefresh();
     state = const EmailListState();
   }
 }

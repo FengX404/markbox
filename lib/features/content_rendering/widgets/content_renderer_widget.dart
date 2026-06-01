@@ -67,8 +67,13 @@ class ContentRendererWidget extends StatelessWidget {
 
       case EmailContentType.html:
         // HTML 类型应该使用 MessageViewerWidget，这里作为降级处理
+        // 去除 HTML 标签后显示纯文本
+        final strippedContent = content.replaceAll(
+          RegExp(r'<[^>]*>', multiLine: true, caseSensitive: false),
+          '',
+        );
         return PlainTextRenderer(
-          content: content,
+          content: strippedContent,
           backgroundColor: backgroundColor ?? const Color(0xFF1E1E1E),
           padding: padding is EdgeInsets
               ? padding as EdgeInsets

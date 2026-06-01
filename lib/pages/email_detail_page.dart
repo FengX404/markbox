@@ -9,6 +9,7 @@ import '../shared/themes/app_spacing.dart';
 import '../shared/utils/date_utils.dart';
 import '../features/content_rendering/widgets/content_renderer_widget.dart';
 import '../features/content_rendering/widgets/message_viewer_widget.dart';
+import '../shared/models/email.dart';
 import '../features/email_parser/models/email_content_type.dart';
 
 /// 邮件详情页面
@@ -291,7 +292,7 @@ class _EmailDetailPageState extends ConsumerState<EmailDetailPage> {
   /// 构建邮件内容
   ///
   /// 包含邮件头部信息卡片和邮件正文
-  Widget _buildEmailContent(ThemeData theme, ColorScheme colorScheme, email) {
+  Widget _buildEmailContent(ThemeData theme, ColorScheme colorScheme, Email email) {
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -310,7 +311,7 @@ class _EmailDetailPageState extends ConsumerState<EmailDetailPage> {
   ///
   /// 展示发件人、日期，使用浅灰背景卡片样式
   /// 参考 Obsidian 笔记属性的设计
-  Widget _buildEmailHeader(ThemeData theme, ColorScheme colorScheme, email) {
+  Widget _buildEmailHeader(ThemeData theme, ColorScheme colorScheme, Email email) {
     // 格式化日期为真实日期+时间
     final formattedDate = DateTimeUtils.formatDateTime(email.date);
 
@@ -374,7 +375,7 @@ class _EmailDetailPageState extends ConsumerState<EmailDetailPage> {
   /// 根据内容类型选择渲染方式：
   /// - Markdown 类型：使用 ContentRendererWidget（支持 Markdown 语法高亮）
   /// - HTML/纯文本类型：使用 MessageViewerWidget（官方 MimeMessageViewer）
-  Widget _buildEmailBody(ThemeData theme, ColorScheme colorScheme, email) {
+  Widget _buildEmailBody(ThemeData theme, ColorScheme colorScheme, Email email) {
     // 内容加载完成回调
     void onContentReady() {
       ref.read(emailDetailProvider.notifier).setContentLoading(false);
@@ -412,6 +413,7 @@ class _EmailDetailPageState extends ConsumerState<EmailDetailPage> {
 
     // 3. 降级：使用 ContentRendererWidget
     if (email.body == null || email.body!.isEmpty) {
+      onContentReady();
       return _buildEmptyContent(theme, colorScheme);
     }
 

@@ -1,21 +1,10 @@
 buildscript {
     repositories {
-        // 使用国内镜像
-        maven("https://maven.aliyun.com/repository/google")
-        maven("https://maven.aliyun.com/repository/public")
-        maven("https://maven.aliyun.com/repository/central")
+        google()
+        mavenCentral()
     }
     dependencies {
         classpath("com.android.tools.build:gradle:8.1.0") // 更稳定的AGP版本
-    }
-}
-
-allprojects {
-    repositories {
-        // 使用国内镜像
-        maven("https://maven.aliyun.com/repository/google")
-        maven("https://maven.aliyun.com/repository/public")
-        maven("https://maven.aliyun.com/repository/central")
     }
 }
 

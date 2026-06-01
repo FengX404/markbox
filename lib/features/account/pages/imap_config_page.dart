@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../pages/email_list_page.dart';
 import '../../../shared/models/imap_config.dart';
@@ -111,7 +112,7 @@ class _ImapConfigPageState extends ConsumerState<ImapConfigPage> {
     if (value == null || value.trim().isEmpty) {
       return '请输入邮箱地址';
     }
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,24}$');
     if (!emailRegex.hasMatch(value)) {
       return '请输入有效的邮箱地址';
     }
@@ -188,13 +189,18 @@ class _ImapConfigPageState extends ConsumerState<ImapConfigPage> {
     );
   }
 
-  /// 生成唯一 ID
+  /// 生成唯一 ID（使用 UUID v4）
   String _generateId() {
-    return '${DateTime.now().millisecondsSinceEpoch}_${_emailController.text.hashCode}';
+    return const Uuid().v4();
   }
 
   /// 保存配置
   Future<void> _saveConfig() async {
+    // 先验证表单
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
     // 创建配置对象
     final config = _buildConfig();
 

@@ -39,11 +39,20 @@ class MessageViewerWidget extends StatefulWidget {
 }
 
 class _MessageViewerWidgetState extends State<MessageViewerWidget> {
+  /// 最大重试次数
+  static const int _maxRetries = 30;
+
+  /// 初始延迟时间
+  static const Duration _initialDelay = Duration(milliseconds: 100);
+
   /// WebView 控制器
   InAppWebViewController? _controller;
 
   /// 是否已经通知内容加载完成
   bool _hasNotifiedReady = false;
+
+  /// 当前重试次数
+  int _retryCount = 0;
 
   @override
   void dispose() {
@@ -63,7 +72,19 @@ class _MessageViewerWidgetState extends State<MessageViewerWidget> {
   /// 由于 MimeMessageViewer 没有暴露 onLoadStop 回调，
   /// 我们需要通过定时器检查 WebView 的加载状态
   void _checkLoadingStatus() {
-    Future.delayed(const Duration(milliseconds: 100), () async {
+    if (_retryCount >= _maxRetries) {
+      debugPrint('MessageViewerWidget: 加载检查达到最大重试次数，标记为就绪');
+      if (mounted) {
+        widget.onContentReady?.call();
+      }
+      return;
+    }
+
+    _retryCount++;
+    // 线性退避：每 10 次重试增加一档延迟
+    final delay = _initialDelay * (_retryCount ~/ 10 + 1);
+
+    Future.delayed(delay, () async {
       if (!mounted || _hasNotifiedReady) return;
 
       final controller = _controller;
@@ -73,20 +94,16 @@ class _MessageViewerWidgetState extends State<MessageViewerWidget> {
       }
 
       try {
-        // 检查 WebView 是否正在加载
         final isLoading = await controller.isLoading();
         if (!isLoading) {
-          // 加载完成，通知父组件
           setState(() {
             _hasNotifiedReady = true;
           });
           widget.onContentReady?.call();
         } else {
-          // 继续检查
           _checkLoadingStatus();
         }
       } catch (e) {
-        // 忽略错误，继续检查
         _checkLoadingStatus();
       }
     });

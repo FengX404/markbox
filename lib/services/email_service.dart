@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:characters/characters.dart';
 import 'package:enough_mail/enough_mail.dart';
 import 'package:flutter/foundation.dart';
 
@@ -203,16 +204,16 @@ class EmailService {
       // 获取邮件总数
       final totalCount = mailboxResult.messagesExists;
 
-      // 计算分页范围
-      // IMAP 邮件序号是从 1 开始的，最新的邮件序号最大
-      final startIndex = totalCount - (page - 1) * pageSize;
-      final endIndex = startIndex - pageSize + 1;
+      // 计算本页对应的 IMAP 序列号范围
+      // IMAP 序列号：1 = 最旧，totalCount = 最新
+      final highSeq = totalCount - (page - 1) * pageSize;
+      final lowSeq = (highSeq - pageSize + 1).clamp(1, totalCount);
 
       // 检查是否还有更多数据
-      final hasMore = endIndex > 1;
+      final hasMore = lowSeq > 1;
 
-      // 如果起始序号小于等于 0，说明没有数据了
-      if (startIndex <= 0) {
+      // 如果窗口起始 <= 0，说明没有数据了
+      if (highSeq <= 0) {
         return FetchEmailsResult(
           emails: [],
           hasMore: false,
@@ -220,18 +221,14 @@ class EmailService {
         );
       }
 
-      // 确保结束序号不小于 1
-      final actualEndIndex = endIndex < 1 ? 1 : endIndex;
+      debugPrint('获取邮件: 序号 $lowSeq 到 $highSeq (第$page页)');
 
-      debugPrint('获取邮件: 序号 $actualEndIndex 到 $startIndex');
-
-      // 获取邮件列表（按时间倒序）
-      // 使用 fetchRecentMessages 获取最近的邮件
+      // 使用 IMAP 序列号范围精确获取指定页的邮件
       // criteria 包含 UID、ENVELOPE 和 INTERNALDATE 以确保获取邮件日期信息和唯一标识符
       final fetchResult = await _client!
-          .fetchRecentMessages(
-            messageCount: startIndex,
-            criteria: '(UID FLAGS ENVELOPE INTERNALDATE BODY.PEEK[])',
+          .fetchMessages(
+            MessageSequence.fromRange(lowSeq, highSeq),
+            '(UID FLAGS ENVELOPE INTERNALDATE BODY.PEEK[])',
           )
           .timeout(
             const Duration(milliseconds: operationTimeoutMs),
@@ -241,29 +238,18 @@ class EmailService {
           );
 
       // 转换为 Email 模型列表
+      // fetchMessages 返回的邮件按序列号从小到大排序（最旧→最新），反转得到最新优先
+      final messages = fetchResult.messages.reversed.toList();
       final emails = <Email>[];
-      // fetchRecentMessages 返回的邮件是从最新到最旧排序的
-      // 我们需要根据分页参数切片
-      final messages = fetchResult.messages;
-
-      // 计算切片范围
-      // messages[0] 是最新的邮件
-      // 我们需要获取从 (page-1)*pageSize 到 page*pageSize 的邮件
-      final startOffset = (page - 1) * pageSize;
-      final endOffset = startOffset + pageSize;
-
-      for (int i = startOffset; i < endOffset && i < messages.length; i++) {
+      for (final message in messages) {
         try {
-          final email = _convertToEmail(messages[i]);
+          final email = _convertToEmail(message);
           emails.add(email);
         } catch (e) {
-          debugPrint('解析邮件失败: ${messages[i].sequenceId}, 错误: $e');
+          debugPrint('解析邮件失败: ${message.sequenceId}, 错误: $e');
           // 跳过解析失败的邮件，继续处理下一封
         }
       }
-
-      // 确保邮件按时间倒序排列（最新的在最前面）
-      emails.sort((a, b) => b.date.compareTo(a.date));
 
       debugPrint('成功获取 ${emails.length} 封邮件');
 
@@ -359,9 +345,9 @@ class EmailService {
     text = text.replaceAll(RegExp(r'\s+'), ' ');
     text = text.trim();
 
-    // 截取前 100 个字符
-    if (text.length > 100) {
-      text = '${text.substring(0, 100)}...';
+    // 截取前 100 个字符（使用 characters 避免拆分 emoji 等代理对）
+    if (text.characters.length > 100) {
+      text = '${text.characters.take(100).toString()}...';
     }
 
     return text.isEmpty ? null : text;

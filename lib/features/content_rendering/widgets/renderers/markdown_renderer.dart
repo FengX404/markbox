@@ -66,9 +66,12 @@ class _MarkdownRendererState extends State<MarkdownRenderer> {
         _shouldFallback = false;
       });
 
-      // 尝试解析 Markdown（通过构建样式表来验证）
+      // 尝试解析 Markdown 内容
       // 如果内容有严重问题，这里会抛出异常
-      final _ = md.ExtensionSet.gitHubWeb;
+      md.Document(
+        extensionSet: md.ExtensionSet.gitHubWeb,
+        encodeHtml: false,
+      ).parseLines(widget.markdownData.split('\n'));
 
       // 如果解析成功，保持正常渲染状态
     } catch (e) {

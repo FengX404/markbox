@@ -18,6 +18,10 @@ class MimeParser {
     'text/markdown',
   };
 
+  /// 最大递归深度限制
+  /// 防止畸形或循环 MIME 结构导致栈溢出
+  static const int _maxDepth = 20;
+
   /// 支持的 multipart MIME 类型
   /// 预留常量，用于未来可能的 MIME 类型验证
   // ignore: unused_field
@@ -87,6 +91,10 @@ class MimeParser {
     List<ParsedContent> contents,
     int depth,
   ) {
+    if (depth > _maxDepth) {
+      debugPrint('MIME 遍历深度超过最大值 $_maxDepth，停止递归');
+      return;
+    }
     final indent = '  ' * depth;
     debugPrint('$indent遍历 MIME 部分，深度: $depth');
 
@@ -394,6 +402,10 @@ class MimeParser {
   /// [buffer] 字符串缓冲区
   /// [depth] 当前深度
   void _buildStructureInfo(dynamic part, StringBuffer buffer, int depth) {
+    if (depth > _maxDepth) {
+      buffer.writeln('${'  ' * depth}... (深度超过最大值 $_maxDepth)');
+      return;
+    }
     final indent = '  ' * depth;
     final contentType = _extractContentType(part);
 

@@ -159,7 +159,7 @@ class ImapService {
     }
 
     // 简单验证邮箱格式
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,24}$');
     if (!emailRegex.hasMatch(config.email)) {
       return ImapConnectionResult.failure(
         errorMessage: '邮箱地址格式不正确',

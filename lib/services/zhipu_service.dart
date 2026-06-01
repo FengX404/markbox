@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
@@ -61,6 +62,11 @@ class ZhipuService {
           'max_tokens': 100,
           'temperature': 0.3,
         }),
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw TimeoutException('智谱 API 请求超时');
+        },
       );
 
       if (response.statusCode == 200) {
