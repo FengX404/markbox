@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(*)",
+      "Write(*)",
+      "Bash(python3 *)",
+      "Bash(sed *)",
+      "Bash(flutter *)",
+      "Bash(git *)",
+      "Bash(dart *)"
+    ]
+  }
+}

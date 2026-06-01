@@ -64,6 +64,7 @@ class _EmailDetailPageState extends ConsumerState<EmailDetailPage> {
   ///
   /// 清除错误并重新加载邮件详情
   void _onRetry() {
+    if (!mounted) return;
     ref.read(emailDetailProvider.notifier).loadEmailDetail(widget.emailId);
   }
 
@@ -378,6 +379,7 @@ class _EmailDetailPageState extends ConsumerState<EmailDetailPage> {
   Widget _buildEmailBody(ThemeData theme, ColorScheme colorScheme, Email email) {
     // 内容加载完成回调
     void onContentReady() {
+      if (!mounted) return;
       ref.read(emailDetailProvider.notifier).setContentLoading(false);
     }
 
@@ -392,7 +394,7 @@ class _EmailDetailPageState extends ConsumerState<EmailDetailPage> {
           content: email.body!,
           contentType: email.contentType,
           backgroundColor: colorScheme.surface,
-          padding: EdgeInsets.zero,
+          padding: const EdgeInsets.zero,
           onContentReady: onContentReady,
         ),
       );

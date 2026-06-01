@@ -257,7 +257,7 @@ class _AccountListItem extends StatelessWidget {
                       ],
                     ),
                   ),
-                  PopupMenuItem(
+                  const PopupMenuItem(
                     value: 'delete',
                     child: Row(
                       children: [

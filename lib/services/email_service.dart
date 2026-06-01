@@ -150,9 +150,24 @@ class EmailService {
       } catch (e) {
         debugPrint('断开连接时出错: $e');
       } finally {
-        _client = null;
-        _currentConfig = null;
+        try {
+          _client = null;
+          _currentConfig = null;
+        } catch (e) {
+          debugPrint('清理客户端资源时出错: $e');
+        }
       }
+    }
+  }
+
+  /// 释放资源
+  ///
+  /// 安全地断开连接并释放所有资源
+  Future<void> dispose() async {
+    try {
+      await disconnect();
+    } catch (e) {
+      debugPrint('释放 EmailService 资源时出错: $e');
     }
   }
 

@@ -103,6 +103,7 @@ class _EmailListPageState extends ConsumerState<EmailListPage>
   ///
   /// 当滚动到接近底部时，触发加载更多
   void _onScroll() {
+    if (!mounted) return;
     // 如果滚动控制器没有附加到滚动视图，直接返回
     if (!_scrollController.hasClients) return;
 
@@ -121,13 +122,19 @@ class _EmailListPageState extends ConsumerState<EmailListPage>
   ///
   /// 调用 EmailListProvider 的 refreshEmails 方法
   Future<void> _onRefresh() async {
-    await ref.read(emailListProvider.notifier).refreshEmails();
+    if (!mounted) return;
+    try {
+      await ref.read(emailListProvider.notifier).refreshEmails();
+    } catch (e) {
+      debugPrint('刷新邮件列表失败: $e');
+    }
   }
 
   /// 处理列表项点击
   ///
   /// 导航到邮件详情页，返回时静默刷新列表
   Future<void> _onEmailTap(String emailId) async {
+    if (!mounted) return;
     await PageTransitions.slideFade(
       context,
       EmailDetailPage(emailId: emailId),
@@ -139,6 +146,7 @@ class _EmailListPageState extends ConsumerState<EmailListPage>
   ///
   /// 清除错误并重新加载邮件
   void _onRetry() {
+    if (!mounted) return;
     ref.read(emailListProvider.notifier).loadEmails();
   }
 
@@ -248,22 +256,86 @@ class _EmailListPageState extends ConsumerState<EmailListPage>
     return _buildEmailList(emailListState, colorScheme);
   }
 
-  /// 构建加载指示器
+  /// 构建骨架屏占位列表
+  ///
+  /// 显示灰色占位块模拟邮件列表加载状态，提升感知性能
   Widget _buildLoadingIndicator(ThemeData theme, ColorScheme colorScheme) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: 16),
-          Text(
-            '正在加载邮件...',
-            style: AppTextStyles.bodyLarge.copyWith(
-              color: AppColors.textSecondary,
-            ),
+    return ListView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 8,
+      itemBuilder: (context, index) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 头像占位
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.borderLight,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // 文本内容占位
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 第一行：发件人 + 时间
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: Container(
+                            height: 14,
+                            decoration: BoxDecoration(
+                              color: AppColors.borderLight,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 1,
+                          child: Container(
+                            height: 14,
+                            decoration: BoxDecoration(
+                              color: AppColors.borderLight,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    // 第二行：主题
+                    Container(
+                      height: 13,
+                      decoration: BoxDecoration(
+                        color: AppColors.borderLight,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // 第三行：预览
+                    Container(
+                      height: 12,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: AppColors.borderLight,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -313,28 +385,52 @@ class _EmailListPageState extends ConsumerState<EmailListPage>
   }
 
   /// 构建空列表提示
+  ///
+  /// 显示图标、说明文字和检查新邮件按钮
   Widget _buildEmptyWidget(ThemeData theme, ColorScheme colorScheme) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.inbox_outlined, size: 64, color: AppColors.textTertiary),
-          const SizedBox(height: 16),
-          Text(
-            '暂无邮件',
-            style: AppTextStyles.titleLarge.copyWith(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.bold,
+      child: Padding(
+        padding: AppEdgeInsets.page,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.inbox_outlined,
+              size: 80,
+              color: AppColors.textTertiary.withValues(alpha: 0.5),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '您的收件箱是空的',
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.textSecondary,
+            const SizedBox(height: 20),
+            Text(
+              '暂无邮件',
+              style: AppTextStyles.titleLarge.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              '您的收件箱是空的，点击下方按钮检查新邮件',
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textSecondary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 28),
+            FilledButton.icon(
+              onPressed: _onRetry,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('检查新邮件'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -433,12 +529,12 @@ class _EmailListPageState extends ConsumerState<EmailListPage>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              SizedBox(
+              const SizedBox(
                 width: 16,
                 height: 16,
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
-              SizedBox(width: 12),
+              const SizedBox(width: 12),
               Text('加载中...'),
             ],
           ),

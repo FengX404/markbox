@@ -55,7 +55,11 @@ class ImapService {
       debugPrint('IMAP 服务器能力: $capabilities');
 
       // 登出
-      await client.logout();
+      try {
+        await client.logout();
+      } catch (e) {
+        debugPrint('IMAP 登出时出错: $e');
+      }
 
       debugPrint('IMAP 连接测试成功');
       return ImapConnectionResult.success();
@@ -125,6 +129,11 @@ class ImapService {
         }
       } catch (e) {
         debugPrint('断开连接时出错: $e');
+      }
+      try {
+        client.close();
+      } catch (e) {
+        debugPrint('关闭 IMAP 客户端时出错: $e');
       }
     }
   }
